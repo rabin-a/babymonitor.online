@@ -1,8 +1,59 @@
-import Link from "next/link";
+"use client";
+
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Baby, Headphones, Shield } from "lucide-react";
+import { StatusIndicator } from "@/components/status-indicator";
+import { AudioLevelMeter } from "@/components/audio-level-meter";
+import { QRDisplay } from "@/components/qr-display";
+import { useWebRTCSender } from "@/hooks/use-webrtc";
+import { Baby, Mic, MicOff, Square } from "lucide-react";
 
 export default function HomePage() {
+  const { status, sessionId, audioLevel, error, start, stop } =
+    useWebRTCSender();
+  const [receiverUrl, setReceiverUrl] = useState<string | null>(null);
+  const [localIp, setLocalIp] = useState<string | null>(null);
+
+  // In local dev mode, fetch local network IP for the receiver URL
+  useEffect(() => {
+    const hostname = window.location.hostname;
+    const isLocalDev =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1";
+
+    if (isLocalDev) {
+      fetch("/api/network")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.addresses?.length > 0) {
+            setLocalIp(data.addresses[0]);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Build receiver URL
+  useEffect(() => {
+    if (!sessionId) {
+      setReceiverUrl(null);
+      return;
+    }
+
+    const hostname = window.location.hostname;
+    const isLocalDev =
+      hostname === "localhost" || hostname === "127.0.0.1";
+
+    if (isLocalDev && localIp) {
+      const port = window.location.port;
+      setReceiverUrl(
+        `http://${localIp}${port ? `:${port}` : ""}/receiver?session=${sessionId}`
+      );
+    } else {
+      setReceiverUrl(`${window.location.origin}/receiver?session=${sessionId}`);
+    }
+  }, [sessionId, localIp]);
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md flex flex-col items-center gap-8">
@@ -15,44 +66,94 @@ export default function HomePage() {
             Baby Monitor
           </h1>
           <p className="text-muted-foreground text-sm max-w-xs text-balance">
-            Privacy-first audio monitoring. No accounts, no tracking, just
-            secure peer-to-peer audio.
+            Privacy-first audio monitoring. Secure peer-to-peer, no accounts needed.
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="w-full flex flex-col gap-4">
-          <Link href="/sender" className="w-full">
+        {/* Idle State - Start Button */}
+        {status === "idle" && (
+          <Button
+            size="lg"
+            onClick={() => start()}
+            className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
+          >
+            <Mic className="w-6 h-6" />
+            Start Monitoring
+          </Button>
+        )}
+
+        {/* Connecting State */}
+        {status === "connecting" && (
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+              <Mic className="w-10 h-10 text-primary" />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Requesting microphone access...
+            </p>
+          </div>
+        )}
+
+        {/* Waiting/Connected State */}
+        {(status === "waiting" || status === "connected") && (
+          <div className="flex flex-col items-center gap-6 w-full">
+            <StatusIndicator status={status} />
+
+            {status === "waiting" && receiverUrl && (
+              <QRDisplay url={receiverUrl} />
+            )}
+
+            {status === "connected" && (
+              <div className="w-full p-4 bg-green-500/10 rounded-xl text-center">
+                <p className="text-green-700 font-medium">
+                  Parent device connected!
+                </p>
+                <p className="text-sm text-green-600 mt-1">
+                  Audio is now streaming
+                </p>
+              </div>
+            )}
+
+            <div className="w-full p-6 bg-card rounded-2xl border border-border">
+              <p className="text-sm text-muted-foreground text-center mb-4">
+                Audio Level
+              </p>
+              <AudioLevelMeter level={audioLevel} />
+            </div>
+
+            <Button
+              variant="destructive"
+              size="lg"
+              onClick={stop}
+              className="w-full h-14 rounded-2xl text-lg gap-2"
+            >
+              <Square className="w-5 h-5" />
+              Stop
+            </Button>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="w-full p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center">
+            {error}
+          </div>
+        )}
+
+        {status === "error" && (
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+              <MicOff className="w-10 h-10 text-destructive" />
+            </div>
             <Button
               size="lg"
-              className="w-full h-20 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
+              onClick={() => start()}
+              className="h-14 px-8 rounded-2xl text-lg gap-2"
             >
-              <Baby className="w-6 h-6" />
-              Start as Baby (Sender)
+              Try Again
             </Button>
-          </Link>
-
-          <Link href="/receiver" className="w-full">
-            <Button
-              size="lg"
-              variant="secondary"
-              className="w-full h-20 text-lg rounded-2xl gap-3"
-            >
-              <Headphones className="w-6 h-6" />
-              Listen as Parent (Receiver)
-            </Button>
-          </Link>
-        </div>
-
-        {/* Privacy Notice */}
-        <div className="flex items-start gap-3 p-4 bg-card rounded-xl border border-border">
-          <Shield className="w-5 h-5 text-accent shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Audio streams directly between devices using WebRTC. No data is
-            stored on any server. Sessions expire automatically after 2 minutes
-            of inactivity.
-          </p>
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );

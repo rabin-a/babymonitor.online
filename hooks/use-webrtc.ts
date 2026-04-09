@@ -127,13 +127,15 @@ export function useWebRTCSender() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete
+      // Wait for ICE gathering to complete (with 5s timeout)
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === "complete") {
           resolve();
         } else {
+          const timeout = setTimeout(() => resolve(), 5000);
           pc.onicegatheringstatechange = () => {
             if (pc.iceGatheringState === "complete") {
+              clearTimeout(timeout);
               resolve();
             }
           };
@@ -253,17 +255,27 @@ export function useWebRTCReceiver() {
         peerConnectionRef.current = pc;
 
         // Handle incoming audio track
-        pc.ontrack = (event) => {
+        pc.ontrack = async (event) => {
           const [stream] = event.streams;
 
           // Create audio element for playback
           const audio = new Audio();
           audio.srcObject = stream;
-          audio.autoplay = true;
           audioRef.current = audio;
+
+          // Explicitly play — required by browser autoplay policy
+          try {
+            await audio.play();
+          } catch {
+            // Autoplay blocked — will be resumed by user gesture
+          }
 
           // Set up audio level analysis
           const audioContext = new AudioContext();
+          // Resume if suspended (mobile browsers require user gesture)
+          if (audioContext.state === "suspended") {
+            await audioContext.resume();
+          }
           audioContextRef.current = audioContext;
           const analyser = audioContext.createAnalyser();
           analyser.fftSize = 256;
@@ -285,8 +297,13 @@ export function useWebRTCReceiver() {
           }
         };
 
-        // Get the offer
-        const offerData = await pollSignal(sessionId, "offer");
+        // Poll for the offer (retry up to 15 times over ~15 seconds)
+        let offerData: string | null = null;
+        for (let i = 0; i < 15; i++) {
+          offerData = await pollSignal(sessionId, "offer");
+          if (offerData) break;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
         if (!offerData) {
           throw new Error("Session not found or expired");
         }
@@ -313,13 +330,15 @@ export function useWebRTCReceiver() {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        // Wait for ICE gathering
+        // Wait for ICE gathering (with 5s timeout)
         await new Promise<void>((resolve) => {
           if (pc.iceGatheringState === "complete") {
             resolve();
           } else {
+            const timeout = setTimeout(() => resolve(), 5000);
             pc.onicegatheringstatechange = () => {
               if (pc.iceGatheringState === "complete") {
+                clearTimeout(timeout);
                 resolve();
               }
             };

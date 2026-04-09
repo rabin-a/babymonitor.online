@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -16,15 +16,15 @@ function ReceiverContent() {
 
   const { status, audioLevel, error, connect, disconnect } = useWebRTCReceiver();
   const [sessionInput, setSessionInput] = useState("");
-  const [hasAttemptedConnect, setHasAttemptedConnect] = useState(false);
+  const hasAttemptedConnect = useRef(false);
 
   // Auto-connect if session is in URL
   useEffect(() => {
-    if (sessionFromUrl && !hasAttemptedConnect && status === "idle") {
-      setHasAttemptedConnect(true);
+    if (sessionFromUrl && !hasAttemptedConnect.current && status === "idle") {
+      hasAttemptedConnect.current = true;
       connect(sessionFromUrl);
     }
-  }, [sessionFromUrl, hasAttemptedConnect, status, connect]);
+  }, [sessionFromUrl, status, connect]);
 
   const handleManualConnect = () => {
     // Extract session ID from URL or use direct input
@@ -40,7 +40,7 @@ function ReceiverContent() {
 
   const handleDisconnect = () => {
     disconnect();
-    setHasAttemptedConnect(false);
+    hasAttemptedConnect.current = false;
   };
 
   const handleRetry = () => {
