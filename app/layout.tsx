@@ -8,7 +8,15 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: 'Baby Monitor - Privacy-First Audio Streaming',
-  description: 'A simple, privacy-first baby monitor using WebRTC for secure audio streaming between devices.',
+  description: 'Privacy-first baby monitor using WebRTC for secure peer-to-peer audio streaming. No accounts, no tracking, no audio stored on servers.',
+  metadataBase: new URL('https://babymonitor.online'),
+  openGraph: {
+    title: 'Baby Monitor',
+    description: 'Privacy-first peer-to-peer audio baby monitor. No accounts needed.',
+    url: 'https://babymonitor.online',
+    siteName: 'Baby Monitor',
+    type: 'website',
+  },
   generator: 'v0.app',
   icons: {
     icon: [

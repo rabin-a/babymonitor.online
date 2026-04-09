@@ -196,6 +196,22 @@ export default function HomePage() {
             </Button>
           </div>
         )}
+
+        {/* Footer */}
+        <footer className="flex items-center justify-center gap-4 pt-4 text-xs text-muted-foreground">
+          <a href="/privacy" className="hover:text-foreground transition-colors">
+            Privacy Policy
+          </a>
+          <span>|</span>
+          <a
+            href="https://github.com/rabin-a/baby-monitor-web-app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground transition-colors"
+          >
+            GitHub
+          </a>
+        </footer>
       </div>
     </main>
   );

@@ -1,5 +1,7 @@
 # Baby Monitor
 
+**[babymonitor.online](https://babymonitor.online)**
+
 Privacy-first, peer-to-peer audio baby monitor that runs entirely in the browser. No accounts, no servers storing your audio, no tracking.
 
 Built with [Next.js](https://nextjs.org) and bootstrapped with [v0](https://v0.app).
@@ -106,6 +108,16 @@ components/
   audio-level-meter.tsx Real-time audio visualizer
   qr-display.tsx        QR code with copy link
 ```
+
+## Privacy & Legal
+
+Full [Privacy Policy](https://babymonitor.online/privacy) available on the site, covering:
+
+- **GDPR compliance** — No persistent personal data stored; auto-expiring sessions; right to erasure honored automatically
+- **CCPA compliance** — No personal information sold or shared for advertising
+- **End-to-end encryption** — Audio encrypted via WebRTC DTLS-SRTP, never touches our servers
+- **Children's privacy** — No personal information collected from any user
+- **Third-party services** — Only Vercel (hosting), Upstash (temporary signaling), Google STUN (connection setup)
 
 ## License
 
