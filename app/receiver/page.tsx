@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -17,32 +17,14 @@ function ReceiverContent() {
   const { status, audioLevel, error, connect, disconnect } = useWebRTCReceiver();
   const [sessionInput, setSessionInput] = useState("");
 
-  // Auto-connect if session is in URL (setTimeout survives React strict mode)
-  useEffect(() => {
-    if (!sessionFromUrl || status !== "idle") return;
-    const timer = setTimeout(() => connect(sessionFromUrl), 100);
-    return () => clearTimeout(timer);
-  }, [sessionFromUrl, status, connect]);
-
-  const handleManualConnect = () => {
-    // Extract session ID from URL or use direct input
-    let sessionId = sessionInput.trim();
-    const urlMatch = sessionId.match(/session=([a-zA-Z0-9]+)/);
-    if (urlMatch) {
-      sessionId = urlMatch[1];
-    }
-    if (sessionId) {
-      connect(sessionId);
-    }
-  };
-
-  const handleDisconnect = () => {
-    disconnect();
-  };
-
-  const handleRetry = () => {
+  const handleConnect = () => {
     if (sessionFromUrl) {
       connect(sessionFromUrl);
+    } else {
+      let sessionId = sessionInput.trim();
+      const urlMatch = sessionId.match(/session=([a-zA-Z0-9]+)/);
+      if (urlMatch) sessionId = urlMatch[1];
+      if (sessionId) connect(sessionId);
     }
   };
 
@@ -63,17 +45,28 @@ function ReceiverContent() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center gap-8 max-w-md mx-auto w-full">
-        {/* Status */}
-        <StatusIndicator status={status} />
 
-        {/* Error Message */}
-        {error && (
-          <div className="p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center w-full">
-            {error}
+        {/* Idle — session from QR/link: show tap-to-listen */}
+        {status === "idle" && sessionFromUrl && (
+          <div className="flex flex-col items-center gap-6 w-full">
+            <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
+              <Headphones className="w-12 h-12 text-primary" />
+            </div>
+            <p className="text-sm text-muted-foreground text-center">
+              Ready to connect to baby device
+            </p>
+            <Button
+              size="lg"
+              onClick={handleConnect}
+              className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
+            >
+              <Headphones className="w-6 h-6" />
+              Tap to Listen
+            </Button>
           </div>
         )}
 
-        {/* Idle State - No Session */}
+        {/* Idle — no session: show manual input */}
         {status === "idle" && !sessionFromUrl && (
           <div className="flex flex-col items-center gap-6 w-full">
             <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center">
@@ -92,7 +85,7 @@ function ReceiverContent() {
               />
               <Button
                 size="lg"
-                onClick={handleManualConnect}
+                onClick={handleConnect}
                 disabled={!sessionInput.trim()}
                 className="h-14 rounded-2xl text-lg gap-2"
               >
@@ -106,6 +99,7 @@ function ReceiverContent() {
         {/* Connecting State */}
         {status === "connecting" && (
           <div className="flex flex-col items-center gap-6">
+            <StatusIndicator status={status} />
             <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
               <Headphones className="w-12 h-12 text-primary" />
             </div>
@@ -118,7 +112,8 @@ function ReceiverContent() {
         {/* Connected State */}
         {status === "connected" && (
           <div className="flex flex-col items-center gap-8 w-full">
-            {/* Connected Message */}
+            <StatusIndicator status={status} />
+
             <div className="p-4 bg-green-500/10 rounded-xl text-center w-full">
               <p className="text-green-700 font-medium">
                 Connected to baby device!
@@ -128,23 +123,19 @@ function ReceiverContent() {
               </p>
             </div>
 
-            {/* Audio Level */}
             <div className="w-full p-6 bg-card rounded-2xl border border-border">
               <div className="flex items-center justify-center gap-2 mb-4">
                 <Volume2 className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Incoming Audio
-                </p>
+                <p className="text-sm text-muted-foreground">Incoming Audio</p>
               </div>
               <AudioLevelMeter level={audioLevel} />
             </div>
 
-            {/* Disconnect Button */}
             <Button
               variant="destructive"
               size="lg"
-              onClick={handleDisconnect}
-              className="h-14 px-8 rounded-2xl text-lg gap-2"
+              onClick={disconnect}
+              className="w-full h-14 rounded-2xl text-lg gap-2"
             >
               Disconnect
             </Button>
@@ -152,49 +143,31 @@ function ReceiverContent() {
         )}
 
         {/* Error State */}
-        {status === "error" && (
+        {error && status === "error" && (
           <div className="flex flex-col items-center gap-6 w-full">
+            <StatusIndicator status={status} />
+            <div className="p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center w-full">
+              {error}
+            </div>
             <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center">
               <VolumeOff className="w-12 h-12 text-destructive" />
             </div>
-            <div className="flex flex-col gap-3 w-full">
-              {sessionFromUrl ? (
-                <Button
-                  size="lg"
-                  onClick={handleRetry}
-                  className="h-14 rounded-2xl text-lg"
-                >
-                  Try Again
-                </Button>
-              ) : (
-                <>
-                  <Input
-                    type="text"
-                    placeholder="Paste session link here..."
-                    value={sessionInput}
-                    onChange={(e) => setSessionInput(e.target.value)}
-                    className="h-12 rounded-xl"
-                  />
-                  <Button
-                    size="lg"
-                    onClick={handleManualConnect}
-                    disabled={!sessionInput.trim()}
-                    className="h-14 rounded-2xl text-lg"
-                  >
-                    Try Again
-                  </Button>
-                </>
-              )}
-              <Link href="/" className="w-full">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full h-14 rounded-2xl text-lg"
-                >
-                  Back to Home
-                </Button>
-              </Link>
-            </div>
+            <Button
+              size="lg"
+              onClick={handleConnect}
+              className="w-full h-14 rounded-2xl text-lg"
+            >
+              Try Again
+            </Button>
+            <Link href="/" className="w-full">
+              <Button
+                variant="outline"
+                size="lg"
+                className="w-full h-14 rounded-2xl text-lg"
+              >
+                Back to Home
+              </Button>
+            </Link>
           </div>
         )}
       </div>

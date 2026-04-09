@@ -297,12 +297,12 @@ export function useWebRTCReceiver() {
           }
         };
 
-        // Poll for the offer (retry up to 15 times over ~15 seconds)
+        // Poll for the offer (retry up to 5 times over ~2.5 seconds)
         let offerData: string | null = null;
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 5; i++) {
           offerData = await pollSignal(sessionId, "offer");
           if (offerData) break;
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 500));
         }
         if (!offerData) {
           throw new Error("Session not found or expired");
