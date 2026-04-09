@@ -44,6 +44,7 @@ export function useWebRTCSender() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [listeners, setListeners] = useState<ListenerInfo[]>([]);
+  const [senderIp, setSenderIp] = useState<string | null>(null);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -213,6 +214,9 @@ export function useWebRTCSender() {
         if (data?.listeners) {
           setListeners(data.listeners);
         }
+        if (data?.senderIp) {
+          setSenderIp(data.senderIp);
+        }
       }, 2000);
     } catch (err) {
       setStatus("error");
@@ -257,6 +261,7 @@ export function useWebRTCSender() {
     setSessionId(null);
     setAudioLevel(0);
     setListeners([]);
+    setSenderIp(null);
   }, []);
 
   useEffect(() => {
@@ -271,6 +276,7 @@ export function useWebRTCSender() {
     audioLevel,
     error,
     listeners,
+    senderIp,
     start,
     stop,
     approveListener,
@@ -342,9 +348,10 @@ export function useWebRTCReceiver() {
         setError(null);
         setSessionEnded(false);
 
-        // Reuse listener ID from localStorage so reconnects are auto-approved
+        // Reuse listener ID from localStorage so reconnects skip approval
         const storageKey = `listener-${sessionId}`;
         let listenerId = localStorage.getItem(storageKey);
+        const isReconnect = !!listenerId;
         if (!listenerId) {
           listenerId = Math.random().toString(36).substring(2, 10);
           localStorage.setItem(storageKey, listenerId);
@@ -353,30 +360,32 @@ export function useWebRTCReceiver() {
         // Send listen request so sender can see us
         await postSignal(sessionId, "listen-request", listenerId);
 
-        // Wait for sender approval (poll up to 60s)
-        let approved = false;
-        for (let i = 0; i < 60; i++) {
-          const data = await getSignal(
-            sessionId,
-            "approval",
-            `&listenerId=${listenerId}`
-          );
-          if (!data) {
-            // Session deleted by sender
-            setSessionEnded(true);
-            throw new Error("Session ended by sender");
+        // If reconnecting (previously approved), skip approval wait
+        if (!isReconnect) {
+          // First connection — wait for sender approval (poll up to 60s)
+          let approved = false;
+          for (let i = 0; i < 60; i++) {
+            const data = await getSignal(
+              sessionId,
+              "approval",
+              `&listenerId=${listenerId}`
+            );
+            if (!data) {
+              setSessionEnded(true);
+              throw new Error("Session ended by sender");
+            }
+            if (data.status === "approved") {
+              approved = true;
+              break;
+            }
+            if (data.status === "rejected") {
+              throw new Error("Connection rejected by sender");
+            }
+            await new Promise((r) => setTimeout(r, 1000));
           }
-          if (data.status === "approved") {
-            approved = true;
-            break;
+          if (!approved) {
+            throw new Error("Approval timed out — sender did not respond");
           }
-          if (data.status === "rejected") {
-            throw new Error("Connection rejected by sender");
-          }
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-        if (!approved) {
-          throw new Error("Approval timed out — sender did not respond");
         }
 
         // Approved — proceed with WebRTC

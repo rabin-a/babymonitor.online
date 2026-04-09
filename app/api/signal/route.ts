@@ -19,7 +19,8 @@ interface SessionData {
   answer?: SignalData;
   ice?: SignalData[];
   listeners?: ListenerInfo[];
-  locked?: boolean; // true after first approval — no new listeners accepted
+  locked?: boolean;
+  senderIp?: string;
 }
 
 // --- Storage layer ---
@@ -111,8 +112,10 @@ export async function POST(request: NextRequest) {
           );
         }
         const signalData: SignalData = { payload, timestamp: Date.now() };
-        if (type === "offer") session.offer = signalData;
-        else if (type === "answer") session.answer = signalData;
+        if (type === "offer") {
+          session.offer = signalData;
+          session.senderIp = getClientIp(request);
+        } else if (type === "answer") session.answer = signalData;
         else {
           if (!session.ice) session.ice = [];
           session.ice.push(signalData);
@@ -238,6 +241,7 @@ export async function GET(request: NextRequest) {
     case "listeners":
       return NextResponse.json({
         listeners: session.listeners ?? [],
+        senderIp: session.senderIp ?? null,
       });
     case "approval": {
       const listenerId = searchParams.get("listenerId");

@@ -25,6 +25,7 @@ export default function HomePage() {
     audioLevel,
     error,
     listeners,
+    senderIp,
     start,
     stop,
     approveListener,
@@ -123,6 +124,7 @@ export default function HomePage() {
                   <ListenerCard
                     key={l.id}
                     listener={l}
+                    sameNetwork={!!senderIp && l.ip === senderIp}
                     onApprove={() => approveListener(l.id)}
                     onReject={() => rejectListener(l.id)}
                   />
@@ -219,26 +221,33 @@ export default function HomePage() {
 
 function ListenerCard({
   listener,
+  sameNetwork,
   onApprove,
   onReject,
 }: {
   listener: ListenerInfo;
+  sameNetwork: boolean;
   onApprove: () => void;
   onReject: () => void;
 }) {
   return (
     <div className="w-full p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <Smartphone className="w-4 h-4 text-amber-600" />
           <span className="text-sm font-medium text-foreground">
             {listener.device}
           </span>
         </div>
-        <span className="text-xs font-mono text-muted-foreground">
-          {listener.ip}
-        </span>
+        {sameNetwork && (
+          <span className="text-xs bg-green-500/20 text-green-700 px-2 py-0.5 rounded-full font-medium">
+            Same network
+          </span>
+        )}
       </div>
+      <p className="text-xs font-mono text-muted-foreground mb-3">
+        {listener.ip}
+      </p>
       <div className="flex gap-2">
         <Button
           size="sm"
