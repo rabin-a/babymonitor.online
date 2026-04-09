@@ -6,13 +6,22 @@ interface SignalData {
   timestamp: number;
 }
 
+interface ListenerInfo {
+  id: string;
+  ip: string;
+  device: string;
+  timestamp: number;
+  status: "pending" | "approved" | "rejected";
+}
+
 interface SessionData {
   offer?: SignalData;
   answer?: SignalData;
   ice?: SignalData[];
+  listeners?: ListenerInfo[];
 }
 
-// --- Storage layer: Redis when deployed, in-memory for local dev ---
+// --- Storage layer ---
 
 const redis =
   process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
@@ -22,7 +31,6 @@ const redis =
       })
     : null;
 
-// In-memory fallback for local dev (persists across HMR reloads)
 const globalForSignal = globalThis as typeof globalThis & {
   __signalSessions?: Map<string, SessionData>;
 };
@@ -31,7 +39,7 @@ if (!globalForSignal.__signalSessions) {
 }
 const localSessions = globalForSignal.__signalSessions;
 
-const SESSION_TTL_SECONDS = 120; // 2 minutes
+const SESSION_TTL_SECONDS = 1800; // 30 minutes
 
 async function getSession(sessionId: string): Promise<SessionData | null> {
   if (redis) {
@@ -40,7 +48,10 @@ async function getSession(sessionId: string): Promise<SessionData | null> {
   return localSessions.get(sessionId) ?? null;
 }
 
-async function setSession(sessionId: string, data: SessionData): Promise<void> {
+async function setSession(
+  sessionId: string,
+  data: SessionData
+): Promise<void> {
   if (redis) {
     await redis.set(`signal:${sessionId}`, data, { ex: SESSION_TTL_SECONDS });
   } else {
@@ -48,12 +59,30 @@ async function setSession(sessionId: string, data: SessionData): Promise<void> {
   }
 }
 
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
+function parseDevice(ua: string): string {
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Mac/i.test(ua)) return "Mac";
+  if (/Windows/i.test(ua)) return "Windows";
+  if (/Linux/i.test(ua)) return "Linux";
+  return "Unknown device";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { sessionId, type, payload } = body;
 
-    if (!sessionId || !type || !payload) {
+    if (!sessionId || !type) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -62,22 +91,62 @@ export async function POST(request: NextRequest) {
 
     const session = (await getSession(sessionId)) ?? {};
 
-    const signalData: SignalData = {
-      payload,
-      timestamp: Date.now(),
-    };
-
     switch (type) {
       case "offer":
-        session.offer = signalData;
-        break;
       case "answer":
-        session.answer = signalData;
+      case "ice": {
+        if (!payload) {
+          return NextResponse.json(
+            { error: "Missing payload" },
+            { status: 400 }
+          );
+        }
+        const signalData: SignalData = { payload, timestamp: Date.now() };
+        if (type === "offer") session.offer = signalData;
+        else if (type === "answer") session.answer = signalData;
+        else {
+          if (!session.ice) session.ice = [];
+          session.ice.push(signalData);
+        }
         break;
-      case "ice":
-        if (!session.ice) session.ice = [];
-        session.ice.push(signalData);
+      }
+
+      case "listen-request": {
+        const ip = getClientIp(request);
+        const ua = request.headers.get("user-agent") || "";
+        const listenerId =
+          payload || Math.random().toString(36).substring(2, 10);
+        if (!session.listeners) session.listeners = [];
+        // Avoid duplicate requests from same listener
+        const existing = session.listeners.find((l) => l.id === listenerId);
+        if (!existing) {
+          session.listeners.push({
+            id: listenerId,
+            ip,
+            device: parseDevice(ua),
+            timestamp: Date.now(),
+            status: "pending",
+          });
+        }
         break;
+      }
+
+      case "approve":
+      case "reject": {
+        const listenerId = payload;
+        if (!listenerId || !session.listeners) {
+          return NextResponse.json(
+            { error: "Listener not found" },
+            { status: 404 }
+          );
+        }
+        const listener = session.listeners.find((l) => l.id === listenerId);
+        if (listener) {
+          listener.status = type === "approve" ? "approved" : "rejected";
+        }
+        break;
+      }
+
       default:
         return NextResponse.json(
           { error: "Invalid signal type" },
@@ -115,30 +184,36 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  let payload: string | null = null;
-
   switch (type) {
     case "offer":
-      payload = session.offer?.payload ?? null;
-      break;
+      return NextResponse.json({
+        payload: session.offer?.payload ?? null,
+      });
     case "answer":
-      payload = session.answer?.payload ?? null;
-      break;
+      return NextResponse.json({
+        payload: session.answer?.payload ?? null,
+      });
     case "ice":
-      payload = session.ice
-        ? JSON.stringify(session.ice.map((i) => i.payload))
-        : null;
-      break;
+      return NextResponse.json({
+        payload: session.ice
+          ? JSON.stringify(session.ice.map((i) => i.payload))
+          : null,
+      });
+    case "listeners":
+      return NextResponse.json({
+        listeners: session.listeners ?? [],
+      });
+    case "approval": {
+      const listenerId = searchParams.get("listenerId");
+      const listener = session.listeners?.find((l) => l.id === listenerId);
+      return NextResponse.json({
+        status: listener?.status ?? "unknown",
+      });
+    }
     default:
       return NextResponse.json(
         { error: "Invalid signal type" },
         { status: 400 }
       );
   }
-
-  if (!payload) {
-    return NextResponse.json({ payload: null });
-  }
-
-  return NextResponse.json({ payload });
 }

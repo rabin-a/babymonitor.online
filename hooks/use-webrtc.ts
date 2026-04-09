@@ -8,15 +8,18 @@ const STUN_SERVERS = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-interface SignalMessage {
-  type: "offer" | "answer" | "ice";
-  payload: string;
+export interface ListenerInfo {
+  id: string;
+  ip: string;
+  device: string;
+  timestamp: number;
+  status: "pending" | "approved" | "rejected";
 }
 
-async function sendSignal(
+async function postSignal(
   sessionId: string,
-  type: SignalMessage["type"],
-  payload: string
+  type: string,
+  payload?: string
 ) {
   const response = await fetch("/api/signal", {
     method: "POST",
@@ -26,20 +29,21 @@ async function sendSignal(
   return response.json();
 }
 
-async function pollSignal(sessionId: string, type: SignalMessage["type"]) {
-  const response = await fetch(
-    `/api/signal?sessionId=${sessionId}&type=${type}`
-  );
+async function getSignal(sessionId: string, type: string, extra?: string) {
+  const url = `/api/signal?sessionId=${sessionId}&type=${type}${extra || ""}`;
+  const response = await fetch(url);
   if (!response.ok) return null;
-  const data = await response.json();
-  return data.payload || null;
+  return response.json();
 }
+
+// ─── SENDER ───
 
 export function useWebRTCSender() {
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [listeners, setListeners] = useState<ListenerInfo[]>([]);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -47,29 +51,52 @@ export function useWebRTCSender() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const animationRef = useRef<number | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const listenerPollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const updateAudioLevel = useCallback(() => {
     if (!analyserRef.current) return;
-
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(dataArray);
-
     const average =
       dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
     setAudioLevel(Math.min(100, (average / 128) * 100));
-
     animationRef.current = requestAnimationFrame(updateAudioLevel);
   }, []);
 
+  const approveListener = useCallback(
+    async (listenerId: string) => {
+      if (!sessionId) return;
+      await postSignal(sessionId, "approve", listenerId);
+      setListeners((prev) =>
+        prev.map((l) =>
+          l.id === listenerId ? { ...l, status: "approved" as const } : l
+        )
+      );
+    },
+    [sessionId]
+  );
+
+  const rejectListener = useCallback(
+    async (listenerId: string) => {
+      if (!sessionId) return;
+      await postSignal(sessionId, "reject", listenerId);
+      setListeners((prev) =>
+        prev.map((l) =>
+          l.id === listenerId ? { ...l, status: "rejected" as const } : l
+        )
+      );
+    },
+    [sessionId]
+  );
+
   const start = useCallback(async () => {
-    // Generate session ID and show QR immediately
     const newSessionId = Math.random().toString(36).substring(2, 10);
     setSessionId(newSessionId);
     setStatus("waiting");
     setError(null);
+    setListeners([]);
 
     try {
-      // Request microphone access (runs while QR is already visible)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -79,7 +106,6 @@ export function useWebRTCSender() {
       });
       streamRef.current = stream;
 
-      // Set up audio level analysis
       const audioContext = new AudioContext();
       audioContextRef.current = audioContext;
       const analyser = audioContext.createAnalyser();
@@ -89,7 +115,6 @@ export function useWebRTCSender() {
       analyserRef.current = analyser;
       updateAudioLevel();
 
-      // Create peer connection
       const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
       peerConnectionRef.current = pc;
 
@@ -97,12 +122,9 @@ export function useWebRTCSender() {
         pc.addTrack(track, stream);
       });
 
-      // Handle ICE candidates
       const iceCandidates: RTCIceCandidate[] = [];
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          iceCandidates.push(event.candidate);
-        }
+        if (event.candidate) iceCandidates.push(event.candidate);
       };
 
       pc.onconnectionstatechange = () => {
@@ -121,11 +143,9 @@ export function useWebRTCSender() {
         }
       };
 
-      // Create and send offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering (5s timeout)
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === "complete") {
           resolve();
@@ -140,28 +160,29 @@ export function useWebRTCSender() {
         }
       });
 
-      // Send offer to signaling server
-      await sendSignal(
+      await postSignal(
         newSessionId,
         "offer",
-        JSON.stringify({
-          sdp: pc.localDescription,
-          iceCandidates,
-        })
+        JSON.stringify({ sdp: pc.localDescription, iceCandidates })
       );
+
+      // Poll for listeners
+      listenerPollingRef.current = setInterval(async () => {
+        const data = await getSignal(newSessionId, "listeners");
+        if (data?.listeners) {
+          setListeners(data.listeners);
+        }
+      }, 2000);
 
       // Poll for answer
       pollingRef.current = setInterval(async () => {
-        const answerData = await pollSignal(newSessionId, "answer");
-        if (answerData) {
-          const { sdp, iceCandidates: remoteIceCandidates } =
-            JSON.parse(answerData);
+        const data = await getSignal(newSessionId, "answer");
+        if (data?.payload) {
+          const { sdp, iceCandidates: remoteIce } = JSON.parse(data.payload);
           await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-
-          for (const candidate of remoteIceCandidates) {
+          for (const candidate of remoteIce) {
             await pc.addIceCandidate(new RTCIceCandidate(candidate));
           }
-
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = null;
@@ -181,30 +202,30 @@ export function useWebRTCSender() {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
     }
-
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
-
+    if (listenerPollingRef.current) {
+      clearInterval(listenerPollingRef.current);
+      listenerPollingRef.current = null;
+    }
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-
     setStatus("idle");
     setSessionId(null);
     setAudioLevel(0);
+    setListeners([]);
   }, []);
 
   useEffect(() => {
@@ -213,13 +234,26 @@ export function useWebRTCSender() {
     };
   }, [stop]);
 
-  return { status, sessionId, audioLevel, error, start, stop };
+  return {
+    status,
+    sessionId,
+    audioLevel,
+    error,
+    listeners,
+    start,
+    stop,
+    approveListener,
+    rejectListener,
+  };
 }
+
+// ─── RECEIVER ───
 
 export function useWebRTCReceiver() {
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [muted, setMuted] = useState(true);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -229,15 +263,20 @@ export function useWebRTCReceiver() {
 
   const updateAudioLevel = useCallback(() => {
     if (!analyserRef.current) return;
-
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(dataArray);
-
     const average =
       dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
     setAudioLevel(Math.min(100, (average / 128) * 100));
-
     animationRef.current = requestAnimationFrame(updateAudioLevel);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      if (audioRef.current) audioRef.current.muted = next;
+      return next;
+    });
   }, []);
 
   const connect = useCallback(
@@ -246,32 +285,51 @@ export function useWebRTCReceiver() {
         setStatus("connecting");
         setError(null);
 
-        // Create peer connection
+        // Generate a listener ID
+        const listenerId = Math.random().toString(36).substring(2, 10);
+
+        // Send listen request so sender can see us
+        await postSignal(sessionId, "listen-request", listenerId);
+
+        // Wait for sender approval (poll up to 60s)
+        let approved = false;
+        for (let i = 0; i < 60; i++) {
+          const data = await getSignal(
+            sessionId,
+            "approval",
+            `&listenerId=${listenerId}`
+          );
+          if (data?.status === "approved") {
+            approved = true;
+            break;
+          }
+          if (data?.status === "rejected") {
+            throw new Error("Connection rejected by sender");
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        if (!approved) {
+          throw new Error("Approval timed out — sender did not respond");
+        }
+
+        // Approved — proceed with WebRTC
         const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
         peerConnectionRef.current = pc;
 
-        // Handle incoming audio track
         pc.ontrack = async (event) => {
           const [stream] = event.streams;
-
-          // Create audio element for playback
           const audio = new Audio();
           audio.srcObject = stream;
+          audio.muted = true;
           audioRef.current = audio;
-
-          // Explicitly play — required by browser autoplay policy
           try {
             await audio.play();
           } catch {
-            // Autoplay blocked — will be resumed by user gesture
+            // muted playback usually succeeds
           }
 
-          // Set up audio level analysis
           const audioContext = new AudioContext();
-          // Resume if suspended (mobile browsers require user gesture)
-          if (audioContext.state === "suspended") {
-            await audioContext.resume();
-          }
+          if (audioContext.state === "suspended") await audioContext.resume();
           audioContextRef.current = audioContext;
           const analyser = audioContext.createAnalyser();
           analyser.fftSize = 256;
@@ -293,40 +351,30 @@ export function useWebRTCReceiver() {
           }
         };
 
-        // Poll for the offer (retry up to 30 times over ~30 seconds)
+        // Get the offer
         let offerData: string | null = null;
-        for (let i = 0; i < 30; i++) {
-          offerData = await pollSignal(sessionId, "offer");
+        for (let i = 0; i < 10; i++) {
+          const data = await getSignal(sessionId, "offer");
+          offerData = data?.payload ?? null;
           if (offerData) break;
           await new Promise((r) => setTimeout(r, 1000));
         }
-        if (!offerData) {
-          throw new Error("Session not found or expired");
-        }
+        if (!offerData) throw new Error("Session not found or expired");
 
-        const { sdp, iceCandidates: remoteIceCandidates } =
-          JSON.parse(offerData);
-
-        // Set remote description
+        const { sdp, iceCandidates: remoteIce } = JSON.parse(offerData);
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-
-        // Add remote ICE candidates
-        for (const candidate of remoteIceCandidates) {
+        for (const candidate of remoteIce) {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         }
 
-        // Create answer
         const iceCandidates: RTCIceCandidate[] = [];
         pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            iceCandidates.push(event.candidate);
-          }
+          if (event.candidate) iceCandidates.push(event.candidate);
         };
 
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        // Wait for ICE gathering (with 5s timeout)
         await new Promise<void>((resolve) => {
           if (pc.iceGatheringState === "complete") {
             resolve();
@@ -341,14 +389,10 @@ export function useWebRTCReceiver() {
           }
         });
 
-        // Send answer
-        await sendSignal(
+        await postSignal(
           sessionId,
           "answer",
-          JSON.stringify({
-            sdp: pc.localDescription,
-            iceCandidates,
-          })
+          JSON.stringify({ sdp: pc.localDescription, iceCandidates })
         );
       } catch (err) {
         setStatus("error");
@@ -363,24 +407,21 @@ export function useWebRTCReceiver() {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
     }
-
     if (audioContextRef.current) {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
-
     if (audioRef.current) {
       audioRef.current.srcObject = null;
       audioRef.current = null;
     }
-
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-
     setStatus("idle");
     setAudioLevel(0);
+    setMuted(true);
   }, []);
 
   useEffect(() => {
@@ -389,5 +430,5 @@ export function useWebRTCReceiver() {
     };
   }, [disconnect]);
 
-  return { status, audioLevel, error, connect, disconnect };
+  return { status, audioLevel, error, muted, connect, disconnect, toggleMute };
 }

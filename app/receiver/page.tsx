@@ -14,19 +14,32 @@ function ReceiverContent() {
   const searchParams = useSearchParams();
   const sessionFromUrl = searchParams.get("session");
 
-  const { status, audioLevel, error, connect, disconnect } = useWebRTCReceiver();
+  const { status, audioLevel, error, muted, connect, disconnect, toggleMute } =
+    useWebRTCReceiver();
   const [sessionInput, setSessionInput] = useState("");
+  const [lastSession, setLastSession] = useState<string | null>(null);
 
   const handleConnect = () => {
-    if (sessionFromUrl) {
-      connect(sessionFromUrl);
+    const session = sessionFromUrl || lastSession;
+    if (session) {
+      setLastSession(session);
+      connect(session);
     } else {
       let sessionId = sessionInput.trim();
       const urlMatch = sessionId.match(/session=([a-zA-Z0-9]+)/);
       if (urlMatch) sessionId = urlMatch[1];
-      if (sessionId) connect(sessionId);
+      if (sessionId) {
+        setLastSession(sessionId);
+        connect(sessionId);
+      }
     }
   };
+
+  const handleDisconnect = () => {
+    disconnect();
+  };
+
+  const hasSession = sessionFromUrl || lastSession;
 
   return (
     <main className="min-h-screen flex flex-col p-6">
@@ -46,14 +59,14 @@ function ReceiverContent() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col items-center justify-center gap-8 max-w-md mx-auto w-full">
 
-        {/* Idle — session from QR/link: show tap-to-listen */}
-        {status === "idle" && sessionFromUrl && (
+        {/* Idle — has session (from URL or previous connection): show connect/reconnect */}
+        {status === "idle" && hasSession && (
           <div className="flex flex-col items-center gap-6 w-full">
             <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center">
               <Headphones className="w-12 h-12 text-primary" />
             </div>
             <p className="text-sm text-muted-foreground text-center">
-              Ready to connect to baby device
+              {lastSession ? "Disconnected — tap to reconnect" : "Ready to connect to baby device"}
             </p>
             <Button
               size="lg"
@@ -61,13 +74,13 @@ function ReceiverContent() {
               className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
             >
               <Headphones className="w-6 h-6" />
-              Tap to Listen
+              {lastSession ? "Reconnect" : "Tap to Listen"}
             </Button>
           </div>
         )}
 
-        {/* Idle — no session: show manual input */}
-        {status === "idle" && !sessionFromUrl && (
+        {/* Idle — no session at all: show manual input */}
+        {status === "idle" && !hasSession && (
           <div className="flex flex-col items-center gap-6 w-full">
             <div className="w-24 h-24 rounded-full bg-secondary flex items-center justify-center">
               <LinkIcon className="w-12 h-12 text-muted-foreground" />
@@ -96,7 +109,7 @@ function ReceiverContent() {
           </div>
         )}
 
-        {/* Connecting State */}
+        {/* Connecting State — waiting for sender approval */}
         {status === "connecting" && (
           <div className="flex flex-col items-center gap-6">
             <StatusIndicator status={status} />
@@ -104,14 +117,14 @@ function ReceiverContent() {
               <Headphones className="w-12 h-12 text-primary" />
             </div>
             <p className="text-sm text-muted-foreground text-center">
-              Connecting to baby device...
+              Waiting for sender to approve...
             </p>
           </div>
         )}
 
         {/* Connected State */}
         {status === "connected" && (
-          <div className="flex flex-col items-center gap-8 w-full">
+          <div className="flex flex-col items-center gap-6 w-full">
             <StatusIndicator status={status} />
 
             <div className="p-4 bg-green-500/10 rounded-xl text-center w-full">
@@ -119,22 +132,48 @@ function ReceiverContent() {
                 Connected to baby device!
               </p>
               <p className="text-sm text-green-600 mt-1">
-                Listening for audio
+                {muted ? "Audio muted — tap to unmute" : "Listening live"}
               </p>
             </div>
 
+            {/* Audio Level — always visible */}
             <div className="w-full p-6 bg-card rounded-2xl border border-border">
               <div className="flex items-center justify-center gap-2 mb-4">
-                <Volume2 className="w-4 h-4 text-muted-foreground" />
+                {muted ? (
+                  <VolumeOff className="w-4 h-4 text-muted-foreground" />
+                ) : (
+                  <Volume2 className="w-4 h-4 text-muted-foreground" />
+                )}
                 <p className="text-sm text-muted-foreground">Incoming Audio</p>
               </div>
               <AudioLevelMeter level={audioLevel} />
             </div>
 
+            {/* Mute/Unmute */}
+            <Button
+              size="lg"
+              variant={muted ? "default" : "secondary"}
+              onClick={toggleMute}
+              className="w-full h-14 rounded-2xl text-lg gap-2"
+            >
+              {muted ? (
+                <>
+                  <Volume2 className="w-5 h-5" />
+                  Unmute
+                </>
+              ) : (
+                <>
+                  <VolumeOff className="w-5 h-5" />
+                  Mute
+                </>
+              )}
+            </Button>
+
+            {/* Disconnect */}
             <Button
               variant="destructive"
               size="lg"
-              onClick={disconnect}
+              onClick={handleDisconnect}
               className="w-full h-14 rounded-2xl text-lg gap-2"
             >
               Disconnect
@@ -148,9 +187,6 @@ function ReceiverContent() {
             <StatusIndicator status={status} />
             <div className="p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center w-full">
               {error}
-            </div>
-            <div className="w-24 h-24 rounded-full bg-destructive/10 flex items-center justify-center">
-              <VolumeOff className="w-12 h-12 text-destructive" />
             </div>
             <Button
               size="lg"

@@ -6,45 +6,52 @@ import { StatusIndicator } from "@/components/status-indicator";
 import { AudioLevelMeter } from "@/components/audio-level-meter";
 import { QRDisplay } from "@/components/qr-display";
 import { useWebRTCSender } from "@/hooks/use-webrtc";
-import { Baby, Mic, MicOff, Square } from "lucide-react";
+import type { ListenerInfo } from "@/hooks/use-webrtc";
+import {
+  Baby,
+  Check,
+  Mic,
+  MicOff,
+  Smartphone,
+  Square,
+  Users,
+  X,
+} from "lucide-react";
 
 export default function HomePage() {
-  const { status, sessionId, audioLevel, error, start, stop } =
-    useWebRTCSender();
+  const {
+    status,
+    sessionId,
+    audioLevel,
+    error,
+    listeners,
+    start,
+    stop,
+    approveListener,
+    rejectListener,
+  } = useWebRTCSender();
   const [receiverUrl, setReceiverUrl] = useState<string | null>(null);
   const [localIp, setLocalIp] = useState<string | null>(null);
 
-  // In local dev mode, fetch local network IP for the receiver URL
   useEffect(() => {
     const hostname = window.location.hostname;
-    const isLocalDev =
-      hostname === "localhost" ||
-      hostname === "127.0.0.1";
-
-    if (isLocalDev) {
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
       fetch("/api/network")
         .then((res) => res.json())
         .then((data) => {
-          if (data.addresses?.length > 0) {
-            setLocalIp(data.addresses[0]);
-          }
+          if (data.addresses?.length > 0) setLocalIp(data.addresses[0]);
         })
         .catch(() => {});
     }
   }, []);
 
-  // Build receiver URL
   useEffect(() => {
     if (!sessionId) {
       setReceiverUrl(null);
       return;
     }
-
     const hostname = window.location.hostname;
-    const isLocalDev =
-      hostname === "localhost" || hostname === "127.0.0.1";
-
-    if (isLocalDev && localIp) {
+    if ((hostname === "localhost" || hostname === "127.0.0.1") && localIp) {
       const port = window.location.port;
       setReceiverUrl(
         `http://${localIp}${port ? `:${port}` : ""}/receiver?session=${sessionId}`
@@ -53,6 +60,9 @@ export default function HomePage() {
       setReceiverUrl(`${window.location.origin}/receiver?session=${sessionId}`);
     }
   }, [sessionId, localIp]);
+
+  const pendingListeners = listeners.filter((l) => l.status === "pending");
+  const approvedListeners = listeners.filter((l) => l.status === "approved");
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
@@ -66,11 +76,12 @@ export default function HomePage() {
             Baby Monitor
           </h1>
           <p className="text-muted-foreground text-sm max-w-xs text-balance">
-            Privacy-first audio monitoring. Secure peer-to-peer, no accounts needed.
+            Privacy-first audio monitoring. Secure peer-to-peer, no accounts
+            needed.
           </p>
         </div>
 
-        {/* Idle State - Start Button */}
+        {/* Idle */}
         {status === "idle" && (
           <Button
             size="lg"
@@ -82,7 +93,7 @@ export default function HomePage() {
           </Button>
         )}
 
-        {/* Waiting/Connected State — QR shows immediately */}
+        {/* Waiting / Connected */}
         {(status === "waiting" || status === "connected") && (
           <div className="flex flex-col items-center gap-6 w-full">
             <StatusIndicator status={status} />
@@ -102,6 +113,50 @@ export default function HomePage() {
               </div>
             )}
 
+            {/* Pending listener requests */}
+            {pendingListeners.length > 0 && (
+              <div className="w-full flex flex-col gap-3">
+                <p className="text-sm font-medium text-foreground">
+                  Connection requests:
+                </p>
+                {pendingListeners.map((l) => (
+                  <ListenerCard
+                    key={l.id}
+                    listener={l}
+                    onApprove={() => approveListener(l.id)}
+                    onReject={() => rejectListener(l.id)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Approved / active listeners */}
+            {approvedListeners.length > 0 && (
+              <div className="w-full p-4 bg-card rounded-xl border border-border">
+                <div className="flex items-center gap-2 mb-3">
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium text-foreground">
+                    Listening ({approvedListeners.length})
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {approvedListeners.map((l) => (
+                    <div
+                      key={l.id}
+                      className="flex items-center justify-between text-xs text-muted-foreground"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Smartphone className="w-3 h-3" />
+                        <span>{l.device}</span>
+                      </div>
+                      <span className="font-mono">{l.ip}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Audio Level */}
             <div className="w-full p-6 bg-card rounded-2xl border border-border">
               <p className="text-sm text-muted-foreground text-center mb-4">
                 Audio Level
@@ -121,13 +176,12 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Error State */}
+        {/* Error */}
         {error && (
           <div className="w-full p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center">
             {error}
           </div>
         )}
-
         {status === "error" && (
           <div className="flex flex-col items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -144,5 +198,50 @@ export default function HomePage() {
         )}
       </div>
     </main>
+  );
+}
+
+function ListenerCard({
+  listener,
+  onApprove,
+  onReject,
+}: {
+  listener: ListenerInfo;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="w-full p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-medium text-foreground">
+            {listener.device}
+          </span>
+        </div>
+        <span className="text-xs font-mono text-muted-foreground">
+          {listener.ip}
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          onClick={onApprove}
+          className="flex-1 gap-1 bg-green-600 hover:bg-green-700"
+        >
+          <Check className="w-4 h-4" />
+          Allow
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={onReject}
+          className="flex-1 gap-1"
+        >
+          <X className="w-4 h-4" />
+          Reject
+        </Button>
+      </div>
+    </div>
   );
 }
