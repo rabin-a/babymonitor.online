@@ -82,19 +82,7 @@ export default function HomePage() {
           </Button>
         )}
 
-        {/* Connecting State */}
-        {status === "connecting" && (
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
-              <Mic className="w-10 h-10 text-primary" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Requesting microphone access...
-            </p>
-          </div>
-        )}
-
-        {/* Waiting/Connected State */}
+        {/* Waiting/Connected State — QR shows immediately */}
         {(status === "waiting" || status === "connected") && (
           <div className="flex flex-col items-center gap-6 w-full">
             <StatusIndicator status={status} />

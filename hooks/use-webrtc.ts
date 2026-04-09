@@ -62,11 +62,14 @@ export function useWebRTCSender() {
   }, []);
 
   const start = useCallback(async () => {
-    try {
-      setStatus("connecting");
-      setError(null);
+    // Generate session ID and show QR immediately
+    const newSessionId = Math.random().toString(36).substring(2, 10);
+    setSessionId(newSessionId);
+    setStatus("waiting");
+    setError(null);
 
-      // Request microphone access
+    try {
+      // Request microphone access (runs while QR is already visible)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -90,14 +93,9 @@ export function useWebRTCSender() {
       const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
       peerConnectionRef.current = pc;
 
-      // Add audio track
       stream.getAudioTracks().forEach((track) => {
         pc.addTrack(track, stream);
       });
-
-      // Generate session ID
-      const newSessionId = Math.random().toString(36).substring(2, 10);
-      setSessionId(newSessionId);
 
       // Handle ICE candidates
       const iceCandidates: RTCIceCandidate[] = [];
@@ -127,7 +125,7 @@ export function useWebRTCSender() {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete (with 5s timeout)
+      // Wait for ICE gathering (5s timeout)
       await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === "complete") {
           resolve();
@@ -142,7 +140,7 @@ export function useWebRTCSender() {
         }
       });
 
-      // Send offer with ICE candidates
+      // Send offer to signaling server
       await sendSignal(
         newSessionId,
         "offer",
@@ -151,8 +149,6 @@ export function useWebRTCSender() {
           iceCandidates,
         })
       );
-
-      setStatus("waiting");
 
       // Poll for answer
       pollingRef.current = setInterval(async () => {
@@ -297,12 +293,12 @@ export function useWebRTCReceiver() {
           }
         };
 
-        // Poll for the offer (retry up to 5 times over ~2.5 seconds)
+        // Poll for the offer (retry up to 30 times over ~30 seconds)
         let offerData: string | null = null;
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 30; i++) {
           offerData = await pollSignal(sessionId, "offer");
           if (offerData) break;
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, 1000));
         }
         if (!offerData) {
           throw new Error("Session not found or expired");
