@@ -52,6 +52,7 @@ export function useWebRTCSender() {
   const animationRef = useRef<number | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const listenerPollingRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   const updateAudioLevel = useCallback(() => {
     if (!analyserRef.current) return;
@@ -178,6 +179,7 @@ export function useWebRTCSender() {
 
   const start = useCallback(async () => {
     const newSessionId = Math.random().toString(36).substring(2, 10);
+    sessionIdRef.current = newSessionId;
     setSessionId(newSessionId);
     setStatus("waiting");
     setError(null);
@@ -222,8 +224,9 @@ export function useWebRTCSender() {
 
   const stop = useCallback(() => {
     // Delete session from server so receiver knows it's gone
-    if (sessionId) {
-      postSignal(sessionId, "delete");
+    if (sessionIdRef.current) {
+      postSignal(sessionIdRef.current, "delete");
+      sessionIdRef.current = null;
     }
 
     if (animationRef.current) {
@@ -254,7 +257,7 @@ export function useWebRTCSender() {
     setSessionId(null);
     setAudioLevel(0);
     setListeners([]);
-  }, [sessionId]);
+  }, []);
 
   useEffect(() => {
     return () => {
