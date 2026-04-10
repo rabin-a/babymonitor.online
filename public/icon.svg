@@ -1,15 +1,15 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="96" fill="#7C3AED"/>
+  <rect width="512" height="512" rx="96" fill="#009FC1"/>
   <g transform="translate(256, 240)">
     <!-- Baby head -->
     <circle cx="0" cy="-40" r="72" fill="white"/>
     <!-- Baby body -->
     <ellipse cx="0" cy="52" rx="56" ry="48" fill="white"/>
     <!-- Eyes -->
-    <circle cx="-22" cy="-48" r="8" fill="#7C3AED"/>
-    <circle cx="22" cy="-48" r="8" fill="#7C3AED"/>
+    <circle cx="-22" cy="-48" r="8" fill="#009FC1"/>
+    <circle cx="22" cy="-48" r="8" fill="#009FC1"/>
     <!-- Smile -->
-    <path d="M-16 -28 Q0 -14 16 -28" stroke="#7C3AED" stroke-width="5" stroke-linecap="round" fill="none"/>
+    <path d="M-16 -28 Q0 -14 16 -28" stroke="#009FC1" stroke-width="5" stroke-linecap="round" fill="none"/>
     <!-- Signal waves (right) -->
     <path d="M90 -60 Q110 -40 90 -20" stroke="white" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.6"/>
     <path d="M110 -72 Q138 -40 110 -8" stroke="white" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.4"/>
