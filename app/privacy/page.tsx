@@ -3,8 +3,11 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
 export const metadata = {
-  title: "Privacy Policy - Baby Monitor",
-  description: "Privacy policy for babymonitor.online",
+  title: "Privacy Policy",
+  description: "Privacy policy for babymonitor.online. No cookies, no tracking, no audio stored. GDPR and CCPA compliant. Learn how we protect your privacy.",
+  alternates: {
+    canonical: "https://babymonitor.online/privacy",
+  },
 };
 
 export default function PrivacyPage() {
