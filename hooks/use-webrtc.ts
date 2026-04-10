@@ -317,7 +317,22 @@ export function useWebRTCSender() {
   }, []);
 
   useEffect(() => {
+    // Clean up session when tab is closed or navigated away
+    const cleanup = () => {
+      if (sessionIdRef.current) {
+        // sendBeacon is reliable on tab close (unlike fetch)
+        navigator.sendBeacon(
+          "/api/signal",
+          JSON.stringify({
+            sessionId: sessionIdRef.current,
+            type: "delete",
+          })
+        );
+      }
+    };
+    window.addEventListener("beforeunload", cleanup);
     return () => {
+      window.removeEventListener("beforeunload", cleanup);
       stop();
     };
   }, [stop]);
