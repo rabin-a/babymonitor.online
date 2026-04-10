@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Baby Monitor AI - local bridge using Claude Code CLI for audio analysis.
+Baby Monitor AI - local bridge using Whisper + Claude Code CLI.
 
-Converts audio to a spectrogram image, then uses claude CLI to
-visually analyze it (Claude can read images via the Read tool).
+Audio -> Whisper (local, free) -> transcript -> Claude CLI (classify)
 
 Usage:
+    pip install openai-whisper
     python3 baby-monitor-ai.py
 
 Requires:
+    - pip install openai-whisper
     - Claude Code CLI (claude command)
-    - ffmpeg (brew install ffmpeg)
+    - ffmpeg (brew install ffmpeg) - needed by whisper
     - Same network as the baby monitor sender
 """
 
@@ -22,8 +23,16 @@ import os
 import subprocess
 import sys
 import shutil
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+
+try:
+    import whisper
+except ImportError:
+    print("Error: 'openai-whisper' package not found.")
+    print("  pip install openai-whisper")
+    sys.exit(1)
 
 DEFAULT_PORT = 9877
 WORK_DIR = "/tmp/baby-monitor"
@@ -31,6 +40,7 @@ WORK_DIR = "/tmp/baby-monitor"
 
 class BridgeHandler(BaseHTTPRequestHandler):
     monitoring_mode = "notify_crying"
+    whisper_model = None
 
     def log_message(self, format, *args):
         print(f"[baby-monitor-ai] {args[0]}")
@@ -88,9 +98,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
             suffix = ".webm" if "webm" in content_type else ".wav"
             audio_path = os.path.join(WORK_DIR, f"capture{suffix}")
-            spectrogram_path = os.path.join(WORK_DIR, "spectrogram.png")
+            wav_path = os.path.join(WORK_DIR, "capture.wav")
 
-            # Save audio
             os.makedirs(WORK_DIR, exist_ok=True)
             with open(audio_path, "wb") as f:
                 f.write(base64.b64decode(audio_b64))
@@ -98,81 +107,93 @@ class BridgeHandler(BaseHTTPRequestHandler):
             size = os.path.getsize(audio_path)
             print(f"[baby-monitor-ai] Saved {size} bytes to {audio_path}")
 
-            # Convert to spectrogram image using ffmpeg
-            print("[baby-monitor-ai] Generating spectrogram...")
-            ffmpeg_result = subprocess.run(
-                [
-                    "ffmpeg", "-y", "-i", audio_path,
-                    "-lavfi", "showspectrumpic=s=800x400:mode=combined",
-                    spectrogram_path,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if ffmpeg_result.returncode != 0 or not os.path.exists(spectrogram_path):
-                # Fallback: get audio stats as text
-                print("[baby-monitor-ai] Spectrogram failed, using volume stats...")
-                stats_result = subprocess.run(
-                    ["ffmpeg", "-i", audio_path, "-af", "volumedetect", "-f", "null", "-"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                audio_info = stats_result.stderr[-500:] if stats_result.stderr else "No stats available"
-
-                prompt = (
-                    f"You are a baby monitor AI. Monitoring mode: {BridgeHandler.monitoring_mode}. "
-                    f"Here are volume statistics from a baby monitor audio recording:\n\n{audio_info}\n\n"
-                    "Based on these volume levels, classify the audio. "
-                    'Respond with ONLY a JSON object: '
-                    '{"status": "sleeping"|"crying"|"fussing"|"babbling"|"coughing"|"noise", '
-                    '"confidence": "high"|"medium"|"low", '
-                    '"description": "brief one-line description"}'
-                )
-
-                result = subprocess.run(
-                    ["claude", "-p", prompt, "--allowedTools", ""],
-                    capture_output=True, text=True, timeout=30,
-                )
-            else:
-                print(f"[baby-monitor-ai] Spectrogram: {spectrogram_path}")
-
-                # Also get volume stats for extra context
-                stats_result = subprocess.run(
-                    ["ffmpeg", "-i", audio_path, "-af", "volumedetect", "-f", "null", "-"],
+            # Convert to WAV for whisper (it works best with wav)
+            if suffix != ".wav":
+                print("[baby-monitor-ai] Converting to WAV...")
+                conv = subprocess.run(
+                    ["ffmpeg", "-y", "-i", audio_path,
+                     "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+                     wav_path],
                     capture_output=True, text=True, timeout=10,
                 )
-                volume_info = ""
-                if stats_result.stderr:
-                    for line in stats_result.stderr.split("\n"):
-                        if "mean_volume" in line or "max_volume" in line:
-                            volume_info += line.strip() + " "
+                if conv.returncode != 0:
+                    print(f"[baby-monitor-ai] ffmpeg error: {conv.stderr[-200:]}")
+                    self._respond(500, {"error": "Audio conversion failed"})
+                    return
+                transcribe_path = wav_path
+            else:
+                transcribe_path = audio_path
 
-                prompt = (
-                    f"Read the spectrogram image at {spectrogram_path}. "
-                    f"This is from a baby monitor. Mode: {BridgeHandler.monitoring_mode}. "
-                    f"{('Volume info: ' + volume_info) if volume_info else ''} "
-                    "The spectrogram shows frequency (vertical) over time (horizontal). "
-                    "Baby crying shows as bright horizontal bands in 300-600Hz range with harmonics. "
-                    "Silence is dark. Background noise is diffuse low-frequency energy. "
-                    'Respond with ONLY a JSON object: '
-                    '{"status": "sleeping"|"crying"|"fussing"|"babbling"|"coughing"|"noise", '
-                    '"confidence": "high"|"medium"|"low", '
-                    '"description": "brief one-line description"}'
-                )
+            # Get volume stats from ffmpeg
+            print("[baby-monitor-ai] Getting volume stats...")
+            vol_result = subprocess.run(
+                ["ffmpeg", "-i", transcribe_path, "-af", "volumedetect",
+                 "-f", "null", "-"],
+                capture_output=True, text=True, timeout=10,
+            )
+            volume_info = ""
+            if vol_result.stderr:
+                for line in vol_result.stderr.split("\n"):
+                    if "mean_volume" in line or "max_volume" in line:
+                        volume_info += line.strip() + "\n"
 
-                result = subprocess.run(
-                    ["claude", "-p", prompt, "--allowedTools", "Read"],
-                    capture_output=True, text=True, timeout=30,
-                )
+            # Transcribe with Whisper
+            print("[baby-monitor-ai] Transcribing with Whisper...")
+            result = BridgeHandler.whisper_model.transcribe(
+                transcribe_path,
+                language="en",
+                fp16=False,
+            )
 
-            output = result.stdout.strip()
+            transcript = result.get("text", "").strip()
+            segments = result.get("segments", [])
+
+            # Build a description of what whisper heard
+            if not transcript or transcript in ["", ".", "...", "you", "You"]:
+                audio_description = "Silence or very faint background noise. No speech or distinct sounds detected."
+            else:
+                audio_description = f'Whisper transcript: "{transcript}"'
+
+            # Check for non-speech audio cues from segment probabilities
+            no_speech_probs = [s.get("no_speech_prob", 0) for s in segments]
+            avg_no_speech = sum(no_speech_probs) / len(no_speech_probs) if no_speech_probs else 1.0
+
+            if avg_no_speech > 0.8 and (not transcript or len(transcript) < 10):
+                audio_description = "Silence detected. Very high no-speech probability from audio analysis."
+            elif avg_no_speech > 0.5 and transcript:
+                audio_description += f" (Note: audio analysis suggests {int(avg_no_speech*100)}% chance this is non-speech noise, possibly crying or ambient sound)"
+
+            print(f"[baby-monitor-ai] Whisper: {audio_description[:100]}")
+            print(f"[baby-monitor-ai] Volume: {volume_info.strip()}")
+
+            # Send to Claude CLI for classification
+            prompt = (
+                f"You are a baby monitor AI. Mode: {BridgeHandler.monitoring_mode}.\n\n"
+                f"Audio analysis from a baby monitor recording:\n"
+                f"- {audio_description}\n"
+                f"- {volume_info.strip() if volume_info else 'No volume data'}\n"
+                f"- Average no-speech probability: {avg_no_speech:.2f}\n\n"
+                "Based on this, classify the baby monitor audio.\n"
+                "Important: Whisper tries to transcribe everything as speech. "
+                "Baby crying often gets transcribed as random words/sounds. "
+                "High no-speech probability with faint transcript usually means crying or noise.\n\n"
+                'Respond with ONLY a JSON object:\n'
+                '{"status": "sleeping"|"crying"|"fussing"|"babbling"|"coughing"|"noise", '
+                '"confidence": "high"|"medium"|"low", '
+                '"description": "brief one-line description"}'
+            )
+
+            print("[baby-monitor-ai] Asking Claude...")
+            claude_result = subprocess.run(
+                ["claude", "-p", prompt, "--allowedTools", ""],
+                capture_output=True, text=True, timeout=30,
+            )
+
+            output = claude_result.stdout.strip()
             print(f"[baby-monitor-ai] Claude: {output[:200]}")
 
             # Clean up
-            for f in [audio_path, spectrogram_path]:
+            for f in [audio_path, wav_path]:
                 try:
                     os.unlink(f)
                 except OSError:
@@ -203,6 +224,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Baby Monitor AI Bridge")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--model", default="base",
+                        help="Whisper model: tiny, base, small, medium (default: base)")
     args = parser.parse_args()
 
     if not shutil.which("claude"):
@@ -215,12 +238,16 @@ def main():
         print("  brew install ffmpeg")
         sys.exit(1)
 
+    print(f"[baby-monitor-ai] Loading Whisper model '{args.model}'...")
+    BridgeHandler.whisper_model = whisper.load_model(args.model)
+    print("[baby-monitor-ai] Whisper model loaded")
+
     os.makedirs(WORK_DIR, exist_ok=True)
 
     server = HTTPServer(("0.0.0.0", args.port), BridgeHandler)
     print("[baby-monitor-ai] Running on http://0.0.0.0:%d" % args.port)
     print("[baby-monitor-ai] Mode: %s" % BridgeHandler.monitoring_mode)
-    print("[baby-monitor-ai] Using: claude CLI + ffmpeg spectrogram")
+    print("[baby-monitor-ai] Pipeline: audio -> ffmpeg -> whisper -> claude CLI")
     print("[baby-monitor-ai] Open babymonitor.online/receiver to connect")
     print("[baby-monitor-ai] Press Ctrl+C to stop")
 
