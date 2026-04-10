@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { StatusIndicator } from "@/components/status-indicator";
+import type { ConnectionStatus } from "@/components/status-indicator";
 import { Check, Copy } from "lucide-react";
 
 interface QRDisplayProps {
   url: string;
+  status?: ConnectionStatus;
   className?: string;
 }
 
-export function QRDisplay({ url, className }: QRDisplayProps) {
+export function QRDisplay({ url, status, className }: QRDisplayProps) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -31,36 +34,47 @@ export function QRDisplay({ url, className }: QRDisplayProps) {
   };
 
   return (
-    <div className={cn("flex flex-col items-center gap-4", className)}>
-      <div className="p-4 bg-card rounded-2xl shadow-sm border border-border">
-        <QRCodeSVG
-          value={url}
-          size={180}
-          level="M"
-          bgColor="transparent"
-          fgColor="currentColor"
-          className="text-foreground"
-        />
-      </div>
-      <p className="text-sm text-muted-foreground text-center max-w-xs">
-        Scan this QR code with the parent device or share the link below
-      </p>
-      <div className="flex items-center gap-2 w-full max-w-xs">
-        <code className="flex-1 px-3 py-2 text-xs bg-muted rounded-lg truncate">
-          {url}
-        </code>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleCopy}
-          className="shrink-0"
-        >
-          {copied ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
-        </Button>
+    <div
+      className={cn(
+        "flex flex-col items-center gap-4 w-full animate-fade-in-up",
+        className
+      )}
+    >
+      <div className="p-6 bg-card rounded-3xl shadow-lg shadow-primary/5 border border-border/50 w-full flex flex-col items-center">
+        {status && (
+          <div className="mb-4">
+            <StatusIndicator status={status} />
+          </div>
+        )}
+        <div className="p-4 bg-white rounded-2xl">
+          <QRCodeSVG
+            value={url}
+            size={180}
+            level="M"
+            bgColor="white"
+            fgColor="#1a1a1a"
+          />
+        </div>
+        <p className="text-sm text-muted-foreground text-center mt-4 leading-relaxed">
+          Scan with the parent device or share the link
+        </p>
+        <div className="flex items-center gap-2 w-full max-w-xs mt-3">
+          <code className="flex-1 px-4 py-2.5 text-xs bg-muted/50 rounded-xl border border-border/30 truncate">
+            {url}
+          </code>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleCopy}
+            className="shrink-0 rounded-xl"
+          >
+            {copied ? (
+              <Check className="h-4 w-4 text-warm-green" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -16,30 +16,35 @@ interface StatusIndicatorProps {
 
 const statusConfig: Record<
   ConnectionStatus,
-  { label: string; dotClass: string; textClass: string }
+  { label: string; subtitle: string; dotClass: string; textClass: string }
 > = {
   idle: {
     label: "Ready",
+    subtitle: "Tap to get started",
     dotClass: "bg-muted-foreground",
     textClass: "text-muted-foreground",
   },
   connecting: {
-    label: "Connecting...",
-    dotClass: "bg-primary animate-pulse",
+    label: "Connecting",
+    subtitle: "Requesting access...",
+    dotClass: "bg-primary animate-gentle-pulse",
     textClass: "text-primary",
   },
   waiting: {
-    label: "Waiting for connection...",
-    dotClass: "bg-accent animate-pulse",
-    textClass: "text-accent-foreground",
+    label: "Waiting",
+    subtitle: "Share the QR code below",
+    dotClass: "bg-warm-amber animate-gentle-pulse",
+    textClass: "text-warm-amber-foreground",
   },
   connected: {
     label: "Connected",
-    dotClass: "bg-green-500",
-    textClass: "text-green-700",
+    subtitle: "Everything is working",
+    dotClass: "bg-warm-green animate-gentle-pulse",
+    textClass: "text-warm-green-foreground",
   },
   error: {
     label: "Connection failed",
+    subtitle: "Check your connection",
     dotClass: "bg-destructive",
     textClass: "text-destructive",
   },
@@ -47,23 +52,39 @@ const statusConfig: Record<
 
 export function StatusIndicator({ status, className }: StatusIndicatorProps) {
   const config = statusConfig[status];
+  const isActive = status === "connecting" || status === "waiting" || status === "connected";
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
-      <span
-        className={cn(
-          "h-3 w-3 rounded-full transition-colors duration-300",
-          config.dotClass
+    <div className={cn("flex items-center gap-3", className)}>
+      <div className="relative flex items-center justify-center">
+        <span
+          className={cn(
+            "h-4 w-4 rounded-full transition-colors duration-300",
+            config.dotClass
+          )}
+        />
+        {isActive && (
+          <span
+            className={cn(
+              "absolute h-4 w-4 rounded-full border-2 animate-ping opacity-30",
+              status === "connecting" && "border-primary",
+              status === "waiting" && "border-warm-amber",
+              status === "connected" && "border-warm-green"
+            )}
+          />
         )}
-      />
-      <span
-        className={cn(
-          "text-sm font-medium transition-colors duration-300",
-          config.textClass
-        )}
-      >
-        {config.label}
-      </span>
+      </div>
+      <div>
+        <span
+          className={cn(
+            "text-base font-semibold transition-colors duration-300",
+            config.textClass
+          )}
+        >
+          {config.label}
+        </span>
+        <p className="text-xs text-muted-foreground">{config.subtitle}</p>
+      </div>
     </div>
   );
 }

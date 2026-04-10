@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/status-indicator";
-import { AudioLevelMeter } from "@/components/audio-level-meter";
+import { AudioWaveform } from "@/components/audio-waveform";
 import { QRDisplay } from "@/components/qr-display";
 import { useWebRTCSender } from "@/hooks/use-webrtc";
 import type { ListenerInfo } from "@/hooks/use-webrtc";
@@ -69,33 +69,43 @@ export default function HomePage() {
   const approvedListeners = listeners.filter((l) => l.status === "approved");
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md flex flex-col items-center gap-8">
-        {/* Logo / Title */}
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Baby className="w-8 h-8 text-primary" />
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 bg-gradient-warm">
+      <div className="w-full max-w-md flex flex-col items-center gap-6">
+        {/* Logo / Title — full on idle, compact on monitoring */}
+        {status === "idle" ? (
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-warm-amber/10 flex items-center justify-center shadow-lg shadow-primary/10 animate-glow-pulse">
+              <Baby className="w-10 h-10 text-primary" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              Baby Monitor
+            </h1>
+            <p className="text-muted-foreground text-sm max-w-xs text-balance leading-relaxed">
+              Privacy-first audio monitoring. Secure peer-to-peer, no accounts needed.
+            </p>
           </div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            Baby Monitor
-          </h1>
-          <p className="text-muted-foreground text-sm max-w-xs text-balance">
-            Privacy-first audio monitoring. Secure peer-to-peer, no accounts
-            needed.
-          </p>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-warm-amber/10 flex items-center justify-center shadow-sm">
+              <Baby className="w-5 h-5 text-primary" />
+            </div>
+            <h1 className="text-lg font-bold tracking-tight text-foreground">
+              Baby Monitor
+            </h1>
+          </div>
+        )}
 
         {/* Idle */}
         {status === "idle" && (
-          <div className="w-full flex flex-col gap-4">
-            {/* Network restriction toggle */}
-            <div className="w-full flex rounded-xl border border-border overflow-hidden">
+          <div className="w-full flex flex-col gap-5 animate-fade-in-up">
+            {/* Network restriction toggle — pill shape */}
+            <div className="w-full flex rounded-full bg-muted/60 p-1">
               <button
                 onClick={() => setNetworkOnly(true)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full text-sm font-medium transition-all duration-300 ${
                   networkOnly
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Wifi className="w-4 h-4" />
@@ -103,10 +113,10 @@ export default function HomePage() {
               </button>
               <button
                 onClick={() => setNetworkOnly(false)}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full text-sm font-medium transition-all duration-300 ${
                   !networkOnly
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Globe className="w-4 h-4" />
@@ -122,9 +132,9 @@ export default function HomePage() {
             <Button
               size="lg"
               onClick={() => start(networkOnly)}
-              className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
+              className="group w-full h-16 text-lg rounded-3xl gap-3 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg shadow-primary/25 active:scale-[0.98] transition-all duration-200"
             >
-              <Mic className="w-6 h-6" />
+              <Mic className="w-6 h-6 group-hover:scale-110 transition-transform" />
               Start Monitoring
             </Button>
           </div>
@@ -132,28 +142,29 @@ export default function HomePage() {
 
         {/* Waiting / Connected */}
         {(status === "waiting" || status === "connected") && (
-          <div className="flex flex-col items-center gap-6 w-full">
-            <StatusIndicator status={status} />
-
+          <div className="flex flex-col items-center gap-6 w-full animate-fade-in-up">
             {status === "waiting" && receiverUrl && (
-              <QRDisplay url={receiverUrl} />
+              <QRDisplay url={receiverUrl} status="waiting" />
             )}
 
             {status === "connected" && (
-              <div className="w-full p-4 bg-green-500/10 rounded-xl text-center">
-                <p className="text-green-700 font-medium">
-                  Parent device connected!
-                </p>
-                <p className="text-sm text-green-600 mt-1">
-                  Audio is now streaming
-                </p>
-              </div>
+              <>
+                <StatusIndicator status={status} />
+                <div className="w-full p-5 bg-warm-green/10 border border-warm-green/20 rounded-2xl text-center animate-fade-in-up">
+                  <p className="text-warm-green-foreground font-semibold">
+                    Parent device connected!
+                  </p>
+                  <p className="text-sm text-warm-green-foreground/70 mt-1">
+                    Audio is now streaming
+                  </p>
+                </div>
+              </>
             )}
 
             {/* Pending listener requests */}
             {pendingListeners.length > 0 && (
-              <div className="w-full flex flex-col gap-3">
-                <p className="text-sm font-medium text-foreground">
+              <div className="w-full flex flex-col gap-3 animate-fade-in-up">
+                <p className="text-sm font-semibold text-foreground">
                   Connection requests:
                 </p>
                 {pendingListeners.map((l) => (
@@ -170,7 +181,7 @@ export default function HomePage() {
 
             {/* Approved / active listeners */}
             {approvedListeners.length > 0 && (
-              <div className="w-full p-4 bg-card rounded-xl border border-border">
+              <div className="w-full p-4 bg-card rounded-2xl border border-border/50 shadow-sm">
                 <div className="flex items-center gap-2 mb-3">
                   <Users className="w-4 h-4 text-muted-foreground" />
                   <p className="text-sm font-medium text-foreground">
@@ -194,19 +205,19 @@ export default function HomePage() {
               </div>
             )}
 
-            {/* Audio Level */}
-            <div className="w-full p-6 bg-card rounded-2xl border border-border">
-              <p className="text-sm text-muted-foreground text-center mb-4">
+            {/* Audio Waveform */}
+            <div className="w-full p-6 bg-card rounded-3xl border border-border/50 shadow-sm">
+              <p className="text-sm font-medium text-muted-foreground text-center mb-4">
                 Audio Level
               </p>
-              <AudioLevelMeter level={audioLevel} />
+              <AudioWaveform level={audioLevel} />
             </div>
 
             <Button
               variant="destructive"
               size="lg"
               onClick={stop}
-              className="w-full h-14 rounded-2xl text-lg gap-2"
+              className="w-full h-14 rounded-3xl text-lg gap-2 shadow-md active:scale-[0.98] transition-all"
             >
               <Square className="w-5 h-5" />
               Stop
@@ -216,19 +227,19 @@ export default function HomePage() {
 
         {/* Error */}
         {error && (
-          <div className="w-full p-4 bg-destructive/10 text-destructive rounded-xl text-sm text-center">
+          <div className="w-full p-4 bg-destructive/10 text-destructive rounded-2xl text-sm text-center animate-fade-in-up">
             {error}
           </div>
         )}
         {status === "error" && (
-          <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-4 animate-fade-in-up">
             <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
               <MicOff className="w-10 h-10 text-destructive" />
             </div>
             <Button
               size="lg"
               onClick={() => start()}
-              className="h-14 px-8 rounded-2xl text-lg gap-2"
+              className="h-14 px-8 rounded-3xl text-lg gap-2 shadow-md active:scale-[0.98] transition-all"
             >
               Try Again
             </Button>
@@ -236,8 +247,11 @@ export default function HomePage() {
         )}
 
         {/* Footer */}
-        <footer className="flex items-center justify-center gap-4 pt-4 text-xs text-muted-foreground">
-          <a href="/privacy" className="hover:text-foreground transition-colors">
+        <footer className="flex items-center justify-center gap-4 pt-4 border-t border-border/30 text-xs text-muted-foreground">
+          <a
+            href="/privacy"
+            className="hover:text-foreground transition-colors"
+          >
             Privacy Policy
           </a>
           <span>|</span>
@@ -267,16 +281,16 @@ function ListenerCard({
   onReject: () => void;
 }) {
   return (
-    <div className="w-full p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+    <div className="w-full p-4 bg-warm-amber/10 border border-warm-amber/20 rounded-2xl shadow-sm animate-fade-in-up">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Smartphone className="w-4 h-4 text-amber-600" />
+          <Smartphone className="w-4 h-4 text-warm-amber-foreground" />
           <span className="text-sm font-medium text-foreground">
             {listener.device}
           </span>
         </div>
         {sameNetwork && (
-          <span className="text-xs bg-green-500/20 text-green-700 px-2 py-0.5 rounded-full font-medium">
+          <span className="text-xs bg-warm-green/15 text-warm-green-foreground px-2.5 py-0.5 rounded-full font-medium">
             Same network
           </span>
         )}
@@ -284,20 +298,18 @@ function ListenerCard({
       <p className="text-xs font-mono text-muted-foreground mb-3">
         {listener.ip}
       </p>
-      <div className="flex gap-2">
+      <div className="flex gap-3">
         <Button
-          size="sm"
           onClick={onApprove}
-          className="flex-1 gap-1 bg-green-600 hover:bg-green-700"
+          className="flex-1 h-10 gap-1.5 bg-warm-green hover:bg-warm-green/90 text-white rounded-xl"
         >
           <Check className="w-4 h-4" />
           Allow
         </Button>
         <Button
-          size="sm"
           variant="destructive"
           onClick={onReject}
-          className="flex-1 gap-1"
+          className="flex-1 h-10 gap-1.5 rounded-xl"
         >
           <X className="w-4 h-4" />
           Reject
