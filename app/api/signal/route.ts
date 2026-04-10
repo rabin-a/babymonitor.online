@@ -21,6 +21,7 @@ interface SessionData {
   listeners?: ListenerInfo[];
   locked?: boolean;
   senderIp?: string;
+  networkOnly?: boolean;
 }
 
 // --- Storage layer ---
@@ -123,6 +124,11 @@ export async function POST(request: NextRequest) {
         break;
       }
 
+      case "network-only": {
+        session.networkOnly = true;
+        break;
+      }
+
       case "listen-request": {
         const ip = getClientIp(request);
         const ua = request.headers.get("user-agent") || "";
@@ -130,17 +136,24 @@ export async function POST(request: NextRequest) {
           payload || Math.random().toString(36).substring(2, 10);
         if (!session.listeners) session.listeners = [];
 
+        // Network restriction: if sender enabled "same network only",
+        // reject silently (receiver sees "session not found")
+        if (session.networkOnly && session.senderIp && ip !== session.senderIp) {
+          await setSession(sessionId, session);
+          return NextResponse.json(
+            { error: "Session not found" },
+            { status: 404 }
+          );
+        }
+
         const existing = session.listeners.find((l) => l.id === listenerId);
         if (existing) {
-          // Same listener reconnecting — auto-approve if previously approved
           if (existing.status === "approved") {
-            // Clear old answer so fresh WebRTC handshake can happen
             session.answer = undefined;
           }
           break;
         }
 
-        // Session is locked after first approval — reject new listeners
         if (session.locked) {
           session.listeners.push({
             id: listenerId,
@@ -221,6 +234,22 @@ export async function GET(request: NextRequest) {
       { error: "Session not found" },
       { status: 404 }
     );
+  }
+
+  // For receiver-facing endpoints, enforce network restriction
+  const receiverTypes = ["offer", "approval", "audio-level"];
+  if (
+    session.networkOnly &&
+    session.senderIp &&
+    receiverTypes.includes(type)
+  ) {
+    const clientIp = getClientIp(request);
+    if (clientIp !== session.senderIp) {
+      return NextResponse.json(
+        { error: "Session not found" },
+        { status: 404 }
+      );
+    }
   }
 
   switch (type) {

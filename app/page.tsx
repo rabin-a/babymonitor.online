@@ -10,11 +10,13 @@ import type { ListenerInfo } from "@/hooks/use-webrtc";
 import {
   Baby,
   Check,
+  Globe,
   Mic,
   MicOff,
   Smartphone,
   Square,
   Users,
+  Wifi,
   X,
 } from "lucide-react";
 
@@ -33,6 +35,7 @@ export default function HomePage() {
   } = useWebRTCSender();
   const [receiverUrl, setReceiverUrl] = useState<string | null>(null);
   const [localIp, setLocalIp] = useState<string | null>(null);
+  const [networkOnly, setNetworkOnly] = useState(true);
 
   useEffect(() => {
     const hostname = window.location.hostname;
@@ -84,14 +87,47 @@ export default function HomePage() {
 
         {/* Idle */}
         {status === "idle" && (
-          <Button
-            size="lg"
-            onClick={() => start()}
-            className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
-          >
-            <Mic className="w-6 h-6" />
-            Start Monitoring
-          </Button>
+          <div className="w-full flex flex-col gap-4">
+            {/* Network restriction toggle */}
+            <div className="w-full flex rounded-xl border border-border overflow-hidden">
+              <button
+                onClick={() => setNetworkOnly(true)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  networkOnly
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Wifi className="w-4 h-4" />
+                Same network
+              </button>
+              <button
+                onClick={() => setNetworkOnly(false)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                  !networkOnly
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Globe className="w-4 h-4" />
+                Any network
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              {networkOnly
+                ? "Only devices on the same WiFi can connect"
+                : "Any device with the link can request to connect"}
+            </p>
+
+            <Button
+              size="lg"
+              onClick={() => start(networkOnly)}
+              className="w-full h-16 text-lg rounded-2xl gap-3 bg-primary hover:bg-primary/90"
+            >
+              <Mic className="w-6 h-6" />
+              Start Monitoring
+            </Button>
+          </div>
         )}
 
         {/* Waiting / Connected */}

@@ -216,7 +216,7 @@ export function useWebRTCSender() {
     }, 1000);
   });
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (networkOnly = true) => {
     const newSessionId = Math.random().toString(36).substring(2, 10);
     sessionIdRef.current = newSessionId;
     setSessionId(newSessionId);
@@ -244,6 +244,11 @@ export function useWebRTCSender() {
       updateAudioLevel();
 
       await createOffer.current(newSessionId);
+
+      // Store network restriction on the session
+      if (networkOnly) {
+        await postSignal(newSessionId, "network-only");
+      }
 
       // Poll for listeners
       listenerPollingRef.current = setInterval(async () => {
